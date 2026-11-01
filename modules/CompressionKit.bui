@@ -1,0 +1,193 @@
+Private Declare Function CKNew Lib "buoy_compressionkit" Alias "bck_new" (decoding As Integer, gzip As Integer, level As Integer, maxInput As Integer, maxOutput As Integer, maxChunk As Integer, maxCallOutput As Integer) As Ptr
+Private Declare Function CKProcess Lib "buoy_compressionkit" Alias "bck_process" (handle As Ptr, input As Ptr, length As Integer, flushMode As Integer) As Integer
+Private Declare Function CKOutput Lib "buoy_compressionkit" Alias "bck_output" (handle As Ptr) As Ptr
+Private Declare Function CKError Lib "buoy_compressionkit" Alias "bck_error" (handle As Ptr) As String
+Private Declare Function CKInputCount Lib "buoy_compressionkit" Alias "bck_input_count" (handle As Ptr) As Integer
+Private Declare Function CKOutputCount Lib "buoy_compressionkit" Alias "bck_output_count" (handle As Ptr) As Integer
+Private Declare Function CKEnded Lib "buoy_compressionkit" Alias "bck_ended" (handle As Ptr) As Integer
+Private Declare Sub CKDelete Lib "buoy_compressionkit" Alias "bck_delete" (handle As Ptr)
+
+''' Codec failures permanently close the stream. Earlier decoder chunks are provisional until Finish.
+Public Class CompressionException Inherits Exception
+    Public Sub Constructor(message As String)
+        Super.Constructor(message)
+    End Sub
+End Class
+
+Private Class CompressionCore
+    Private Property mHandle As Ptr
+    Private Property mFinished As Boolean = False
+    Private Property mEnded As Boolean = False
+    Private Property mInput As Integer = 0
+    Private Property mOutput As Integer = 0
+
+    Public Sub Constructor(decoding As Boolean, formatName As String, level As Integer, maxInputBytes As Integer, maxOutputBytes As Integer, maxChunkBytes As Integer, maxCallOutputBytes As Integer)
+        Dim gzip As Integer = 0
+        If String.Compare(formatName, "gzip", True) = 0 Then
+            gzip = 1
+        ElseIf String.Compare(formatName, "zlib", True) <> 0 Then
+            Throw New InvalidArgumentException("formatName must be gzip or zlib")
+        End If
+        If level < -1 Or level > 9 Then Throw New InvalidArgumentException("level must be -1..9")
+        If maxInputBytes < 0 Or maxOutputBytes < 0 Then Throw New InvalidArgumentException("Lifetime byte limits must be nonnegative")
+        If maxChunkBytes < 1 Or maxChunkBytes > 16777216 Then Throw New InvalidArgumentException("maxChunkBytes must be 1..16777216")
+        If maxCallOutputBytes < 1 Or maxCallOutputBytes > 16777216 Then Throw New InvalidArgumentException("maxCallOutputBytes must be 1..16777216")
+        Dim mode As Integer = 0
+        If decoding Then mode = 1
+        mHandle = CKNew(mode, gzip, level, maxInputBytes, maxOutputBytes, maxChunkBytes, maxCallOutputBytes)
+        If mHandle = Nil Then Throw New CompressionException("Unable to initialize bounded zlib stream")
+    End Sub
+
+    Public Function Process(data As Bytes, flushMode As Integer) As Bytes
+        If mHandle = Nil Then Throw New InvalidArgumentException("Compression stream is closed")
+        If mFinished Then Throw New InvalidArgumentException("Compression stream already finished")
+        If data = Nil Then Throw New InvalidArgumentException("Input bytes are required")
+        Dim count As Integer = CKProcess(mHandle, data.DataPtr(), data.Count, flushMode)
+        If count < 0 Then
+            Dim message As String = CKError(mHandle)
+            Me.Close()
+            Throw New CompressionException(message)
+        End If
+        Try
+            Dim output As New Bytes()
+            If count > 0 Then output.Append(CKOutput(mHandle), count)
+            mInput = CKInputCount(mHandle)
+            mOutput = CKOutputCount(mHandle)
+            mEnded = CKEnded(mHandle) <> 0
+            If flushMode = 4 Then mFinished = True
+            Return output
+        Catch error As Exception
+            Me.Close()
+            Throw error
+        End Try
+    End Function
+
+    Public Property IsClosed As Boolean
+        Get
+            Return mHandle = Nil
+        End Get
+    End Property
+    Public Property IsFinished As Boolean
+        Get
+            Return mFinished
+        End Get
+    End Property
+    Public Property IsStreamEnd As Boolean
+        Get
+            Return mEnded
+        End Get
+    End Property
+    Public Property InputBytes As Integer
+        Get
+            Return mInput
+        End Get
+    End Property
+    Public Property OutputBytes As Integer
+        Get
+            Return mOutput
+        End Get
+    End Property
+
+    Public Sub Close()
+        If mHandle <> Nil Then CKDelete(mHandle)
+        mHandle = Nil
+    End Sub
+    Public Sub Destructor()
+        Me.Close()
+    End Sub
+End Class
+
+''' Incremental single-stream gzip/zlib encoder. Confine each instance to one thread.
+Public Class StreamCompressor
+    Private Property mCore As CompressionCore
+
+    Public Sub Constructor(formatName As String = "gzip", level As Integer = -1, maxInputBytes As Integer = 67108864, maxOutputBytes As Integer = 67108864, maxChunkBytes As Integer = 1048576, maxCallOutputBytes As Integer = 16777216)
+        mCore = New CompressionCore(False, formatName, level, maxInputBytes, maxOutputBytes, maxChunkBytes, maxCallOutputBytes)
+    End Sub
+    Public Function Write(data As Bytes) As Bytes
+        Return mCore.Process(data, 0)
+    End Function
+    ''' Z_SYNC_FLUSH: emit pending data and an aligned empty block; stream remains open.
+    Public Function Flush() As Bytes
+        Return mCore.Process(New Bytes(), 2)
+    End Function
+    ''' Emit final compressed bytes and checksum/footer. Must be called once before Close.
+    Public Function Finish() As Bytes
+        Return mCore.Process(New Bytes(), 4)
+    End Function
+    Public Property IsClosed As Boolean
+        Get
+            Return mCore.IsClosed
+        End Get
+    End Property
+    Public Property IsFinished As Boolean
+        Get
+            Return mCore.IsFinished
+        End Get
+    End Property
+    Public Property InputBytes As Integer
+        Get
+            Return mCore.InputBytes
+        End Get
+    End Property
+    Public Property OutputBytes As Integer
+        Get
+            Return mCore.OutputBytes
+        End Get
+    End Property
+    ''' Idempotent abort/release. Close never silently finishes a stream.
+    Public Sub Close()
+        If mCore <> Nil Then mCore.Close()
+    End Sub
+    Public Sub Destructor()
+        Me.Close()
+    End Sub
+End Class
+
+''' Incremental strict one-member decoder. All decoded chunks remain provisional until Finish.
+Public Class StreamDecompressor
+    Private Property mCore As CompressionCore
+
+    Public Sub Constructor(formatName As String = "gzip", maxInputBytes As Integer = 67108864, maxOutputBytes As Integer = 67108864, maxChunkBytes As Integer = 1048576, maxCallOutputBytes As Integer = 16777216)
+        mCore = New CompressionCore(True, formatName, -1, maxInputBytes, maxOutputBytes, maxChunkBytes, maxCallOutputBytes)
+    End Sub
+    Public Function Write(data As Bytes) As Bytes
+        Return mCore.Process(data, 0)
+    End Function
+    ''' Validate that a complete checksummed stream ended; truncated streams fail and close.
+    Public Function Finish() As Bytes
+        Return mCore.Process(New Bytes(), 4)
+    End Function
+    Public Property IsClosed As Boolean
+        Get
+            Return mCore.IsClosed
+        End Get
+    End Property
+    Public Property IsFinished As Boolean
+        Get
+            Return mCore.IsFinished
+        End Get
+    End Property
+    Public Property IsStreamEnd As Boolean
+        Get
+            Return mCore.IsStreamEnd
+        End Get
+    End Property
+    Public Property InputBytes As Integer
+        Get
+            Return mCore.InputBytes
+        End Get
+    End Property
+    Public Property OutputBytes As Integer
+        Get
+            Return mCore.OutputBytes
+        End Get
+    End Property
+    ''' Idempotent abort/release; it does not validate or commit decoded output.
+    Public Sub Close()
+        If mCore <> Nil Then mCore.Close()
+    End Sub
+    Public Sub Destructor()
+        Me.Close()
+    End Sub
+End Class

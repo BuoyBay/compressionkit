@@ -1,0 +1,23 @@
+{
+  "toolchain": "Zig 0.14.1",
+  "url": "https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz",
+  "sha256": "24aeeec8af16c381934a6cd7d95c807a8cb2cf7df9fa40d359aa884195c4716c",
+  "license": "MIT; bundled LLVM Apache-2.0 WITH LLVM-exception and libc component licenses",
+  "licenseFiles": [
+    "LICENSE",
+    "lib/libc/mingw/COPYING",
+    "lib/libc/glibc/LICENSES"
+  ],
+  "target": "aarch64-windows-gnu",
+  "nativeSourceSha256": "6dfa13edc30e151e6a802ea54508444409af4dd4d3f0eb1335601525175f7c5d",
+  "helperSha256": "d4a4bb01471111847d9cb5662a4a810d4e434cf59f9d9751cbf2a34d92be092d",
+  "abiAssertions": {
+    "pointer": 8,
+    "int64_t": 8,
+    "int": 4,
+    "long": 4,
+    "z_stream": 88
+  },
+  "binarySha256": "ee4d714dd0f79df46d971cfd3e84105c4d435176da4db9afe4d5eca73f933049",
+  "execution": "Cross-built; no native ARM64 execution claimed"
+}

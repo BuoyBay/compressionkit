@@ -1,0 +1,1 @@
+{"schema":1,"name":"compressionkit","version":"0.1.0","description":"Bounded incremental gzip/zlib streams with strict finish and ownership","libraries":[{"libName":"buoy_compressionkit","system":false,"minVersion":"0.1.0"}]}
