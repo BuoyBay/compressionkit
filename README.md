@@ -1,4 +1,4 @@
-# Stream gzip and zlib data with explicit resource bounds
+# gzip / zlib streams with explicit resource bounds
 
 Incremental gzip and zlib streams, with explicit input/output budgets,
 checksummed completion and scoped native ownership. Copy the sealed
