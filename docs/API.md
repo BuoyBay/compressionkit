@@ -64,42 +64,16 @@ Counters are advanced only after a successful public operation. Flush can add
 compressed bytes and degrade compression ratio; avoid flushing after every small
 chunk unless the consumer needs the boundary immediately.
 
-## Build and verify
+## Native build requirements
 
-```sh
-python3 tools/build_compressionkit.py
-python3 tools/build_compressionkit.py --target x86_64-windows --cc x86_64-w64-mingw32-gcc --native-only
-python3 tools/build_compressionkit.py --seal-only
-```
+The included `native/bridge.c` wraps the checksum-pinned zlib source recorded in
+[native/sources.json](../native/sources.json). Native builds need a target C
+compiler, and Windows consumers also need the matching import library.
 
-The build extracts the pinned upstream source archive after checking SHA-256,
-compiles its core codec sources plus a scalar ABI bridge, and records a source
-receipt (including the build recipe) beside each runtime. Vendored symbols are
-hidden on ELF/Mach-O so other imported zlib libraries cannot replace the pinned
-codec through symbol interposition. Sealing includes only slices matching the current
-source digest. Windows import libraries are included. All six target payloads are
-provided: Linux x86_64/ARM64, macOS ARM64/Intel, and Windows x86_64/ARM64.
-Linux ARM64 and Windows ARM64 are cross-built, ABI/export/dependency inspected,
-and sealed-consumer cross-linked; native execution on those two targets remains
-unverified. See [ARM build provenance and reproduction](../native/ARM-BUILDS.md).
-Compiler checks and cross-links are recorded separately from native execution.
+Vendored codec symbols are hidden on ELF/Mach-O to avoid interposition by another
+zlib in the process. Ship a matching runtime slice for each architecture you
+support. Cross-compilation and binary inspection do not establish native runtime
+behavior. See [ARM64 target requirements](../native/ARM-BUILDS.md).
 
-The verifier compiler-checks the module and sealed consumer on six desktop
-targets. It executes strict regressions and 36 two-way Python zlib/gzip oracles
-over empty, binary/NUL, Unicode, random and compressible payloads with one-byte,
-seven-byte and large chunk boundaries. Tests cover sync flush, exact/zero limits,
-over-budget output/input/chunks, corruption, truncation, later-call trailing data,
-concatenation, dictionaries, terminal failure, repeated close and explicit abort.
-The same strict consumer and oracles pass native macOS ARM64 and Windows x86_64;
-macOS Intel consumers also link, with Intel execution untested. Reproduce native
-runs with `tests/standard_library_macos.py` and `tests/standard_library_windows.py`.
-BUOY and BPM_PACKAGER select toolchain commands. The builder uses GCC/Clang-style
-C flags and Python with tarfile's data extraction filter (Python 3.12+).
-
-The [upstream source record](../native/sources.json) and
-[zlib license](../resources/zlib-LICENSE.txt) accompany this independent bridge.
-Zig and MinGW component notices are also included under package resources for
-the ARM build toolchain.
-No declaresub implementation is copied.
-
-Test suites and fixtures are maintainer-local and are not part of this public repository.
+The [zlib license](../resources/zlib-LICENSE.txt) and retained component notices
+accompany the native source. The compiler/runtime is supplied separately.

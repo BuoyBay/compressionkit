@@ -1,6 +1,6 @@
 # Stream gzip and zlib data with explicit resource bounds
 
-Incremental gzip and zlib streams for Buoy, with explicit input/output budgets,
+Incremental gzip and zlib streams, with explicit input/output budgets,
 checksummed completion and scoped native ownership. Copy the sealed
 `packages/compressionkit-0.1.0.buipkg` into a consumer's packages directory, then
 `Import compressionkit`. The archive includes native bridge slices listed below;
@@ -48,7 +48,6 @@ On your own machine, install Buoy and run:
 buoy ai init --both
 ```
 
-The generated agent files and editor settings stay local and are ignored by Git.
 
 ## Contributing
 

@@ -37,5 +37,4 @@ by the configured per-call limits even when lifetime budgets are much larger.
 
 [Overview](index.md)
 
-
 [Full typed API: properties, parameters, defaults, and returns](typed-api.md)
